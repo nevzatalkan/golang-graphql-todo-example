@@ -251,19 +251,6 @@ func setMessage(msg string) {
 }
 
 func main() {
-	// http.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
-	// 	result := executeQuery(r.URL.Query().Get("query"), schema)
-	// 	json.NewEncoder(w).Encode(result)
-	// })
-
-	// http.HandleFunc("/", graphiql.ServeGraphiQL)
-
-	// // Serve static files
-	// // fs := http.FileServer(http.Dir("static"))
-	// // http.Handle("/", fs)
-	// // Display some basic instructions
-
-	// go setMessage("Hello World")
 
 	http.HandleFunc("/", graphiql.ServeGraphiQL)
 	http.HandleFunc("/graphql", serveGraphQL(schema))
