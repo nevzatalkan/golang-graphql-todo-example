@@ -195,17 +195,6 @@ var schema, _ = graphql.NewSchema(graphql.SchemaConfig{
 	Mutation: rootMutation,
 })
 
-// func executeQuery(query string, schema graphql.Schema) *graphql.Result {
-// 	result := graphql.Do(graphql.Params{
-// 		Schema:        schema,
-// 		RequestString: query,
-// 	})
-// 	if len(result.Errors) > 0 {
-// 		fmt.Printf("wrong result, unexpected errors: %v", result.Errors)
-// 	}
-// 	return result
-// }
-
 func serveGraphQL(s graphql.Schema) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sendError := func(err error) {
