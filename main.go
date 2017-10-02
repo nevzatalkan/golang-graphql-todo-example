@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"math/rand"
 	"net/http"
 	"time"
@@ -196,16 +195,16 @@ var schema, _ = graphql.NewSchema(graphql.SchemaConfig{
 	Mutation: rootMutation,
 })
 
-func executeQuery(query string, schema graphql.Schema) *graphql.Result {
-	result := graphql.Do(graphql.Params{
-		Schema:        schema,
-		RequestString: query,
-	})
-	if len(result.Errors) > 0 {
-		fmt.Printf("wrong result, unexpected errors: %v", result.Errors)
-	}
-	return result
-}
+// func executeQuery(query string, schema graphql.Schema) *graphql.Result {
+// 	result := graphql.Do(graphql.Params{
+// 		Schema:        schema,
+// 		RequestString: query,
+// 	})
+// 	if len(result.Errors) > 0 {
+// 		fmt.Printf("wrong result, unexpected errors: %v", result.Errors)
+// 	}
+// 	return result
+// }
 
 func serveGraphQL(s graphql.Schema) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -229,25 +228,6 @@ func serveGraphQL(s graphql.Schema) http.HandlerFunc {
 			sendError(err)
 		}
 	}
-}
-
-func setMessage(msg string) {
-	c, err := graphiql.NewClient("http://localhost:8081/graphql")
-	if err != nil {
-		panic(err)
-	}
-
-	q := `mutation _ { setMessage(msg: "` + msg + `") }`
-	res, err := c.Send(&graphiql.Request{Query: q})
-	if err != nil {
-		panic(err)
-	}
-
-	if string(*res.Data) != `{"setMessage":"Hello World"}` {
-		panic("bad response")
-	}
-
-	log.Println("listening on http://localhost:8081")
 }
 
 func main() {
