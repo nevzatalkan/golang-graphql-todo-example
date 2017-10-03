@@ -3,46 +3,23 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"net/http"
-	"time"
+	"os"
 
+	"github.com/go-xorm/xorm"
 	"github.com/graphql-go/graphql"
 	"github.com/mnmtanish/go-graphiql"
-)
 
-import (
-	"github.com/go-xorm/xorm"
 	_ "github.com/mattn/go-sqlite3"
 )
 
 var engine *xorm.Engine
 
 type Todo struct {
-	Id      int64
+	Id      int `xorm:"pk"`
 	Text    string
 	Done    bool
 	Version int `xorm:"version"` // Optimistic Locking
-}
-
-var TodoList []Todo
-var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
-
-func RandStringRunes(n int64) string {
-	b := make([]rune, n)
-	for i := range b {
-		b[i] = letterRunes[rand.Intn(len(letterRunes))]
-	}
-	return string(b)
-}
-
-func init() {
-	todo1 := Todo{Id: 1, Text: "A todo not to forget", Done: false}
-	todo2 := Todo{Id: 2, Text: "This is the most important", Done: false}
-	todo3 := Todo{Id: 3, Text: "Please do this or else", Done: false}
-	TodoList = append(TodoList, todo1, todo2, todo3)
-
-	rand.Seed(time.Now().UnixNano())
 }
 
 // define custom GraphQL ObjectType `todoType` for our Golang struct `Todo`
@@ -85,7 +62,7 @@ var rootMutation = graphql.NewObject(graphql.ObjectConfig{
 				Text, _ := params.Args["Text"].(string)
 
 				// figure out new Id
-				var newID int64 = 4 //RandStringRunes(8)
+				var newID int = 4 //RandStringRunes(8)
 
 				// perform mutation operation here
 				// for e.g. create a Todo and save to DB.
@@ -94,8 +71,6 @@ var rootMutation = graphql.NewObject(graphql.ObjectConfig{
 					Text: Text,
 					Done: false,
 				}
-
-				TodoList = append(TodoList, newTodo)
 
 				// return the new Todo object that we supposedly save to DB
 				// Note here that
@@ -122,23 +97,23 @@ var rootMutation = graphql.NewObject(graphql.ObjectConfig{
 			Resolve: func(params graphql.ResolveParams) (interface{}, error) {
 				// marshall and cast the argument value
 				DoneParam, _ := params.Args["Done"].(bool)
-				IdParam, _ := params.Args["Id"].(int64)
+				IdParam, _ := params.Args["Id"].(int)
 
-				todo := Todo{Id: IdParam, Done: DoneParam}
+				// todo := Todo{Id: IdParam, Done: DoneParam}
 
 				engine, _ = xorm.NewEngine("sqlite3", "./test.db")
 
-				affected, err := engine.Id(IdParam).Update(todo)
-				fmt.Println(affected)
-				//_, err := engine.Update(&todo)
-				if err != nil {
-					fmt.Println(err)
-					return nil, err
-				}
+				todo := &Todo{Id: IdParam}
+				engine.Id(IdParam).Get(todo)
 
-				engine.Get(&todo)
+				todo.Done = DoneParam
+				engine.Cols("Done").Update(todo)
 
-				return todo, err
+				engine.Id(IdParam).Get(todo)
+
+				engine.Get(todo)
+
+				return todo, nil
 			},
 		},
 	},
@@ -165,13 +140,14 @@ var rootQuery = graphql.NewObject(graphql.ObjectConfig{
 			},
 			Resolve: func(params graphql.ResolveParams) (interface{}, error) {
 
-				idQuery, isOK := params.Args["Id"].(int64)
+				idQuery, isOK := params.Args["Id"].(int)
 				if isOK {
 
 					engine, _ = xorm.NewEngine("sqlite3", "./test.db")
+					err := engine.Sync(new(Todo))
 
 					var todo = Todo{Id: idQuery}
-					_, err := engine.Get(&todo)
+					_, err = engine.Id(idQuery).Get(&todo)
 					return todo, err
 				}
 
@@ -193,7 +169,7 @@ var rootQuery = graphql.NewObject(graphql.ObjectConfig{
 
 				_ = engine.Find(&all)
 				fmt.Println("%v", all)
-				return TodoList, nil
+				return all, nil
 			},
 		},
 	},
@@ -229,36 +205,41 @@ func serveGraphQL(s graphql.Schema) http.HandlerFunc {
 	}
 }
 
-func main() {
-
-	engine, err := xorm.NewEngine("sqlite3", "./test.db")
-
+func deleteDb() {
+	// delete file
+	err := os.Remove("./test.db")
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
-	err = engine.Sync2(new(Todo))
+	fmt.Println("==> done deleting file")
+}
 
-	engine.Insert(TodoList)
+func main() {
 
-	todo := &Todo{}
-	engine.Id(1).Get(todo)
+	deleteDb()
 
-	todo.Done = true
-	engine.Update(todo)
+	engine, _ = xorm.NewEngine("sqlite3", "./test.db")
 
-	engine.Id(1).Get(todo)
+	// engine, err := xorm.NewEngine("sqlite3", "./test.db")
 
-	//engine.Insert(&Account{Id: 1, Name: "sdfsdf", Balance: 12.0})
+	// if err != nil {
+	// 	fmt.Println(err)
+	// 	return
+	// }
 
-	// a := &Account{}
-	// _, _ = engine.Id(1).Get(a)
+	engine.Sync2(new(Todo))
 
-	// a.Balance += 10
-	// engine.Update(a)
+	engine.Insert(&Todo{Id: 1, Text: "sdfsdf", Done: false})
 
-	// engine.Id(1).Get(a)
+	// todo := &Todo2{}
+	// engine.Id(1).Get(todo)
+
+	// todo.Done = true
+	// engine.Cols("Done").Update(todo)
+
+	// engine.Id(1).Get(todo)
 
 	http.HandleFunc("/", graphiql.ServeGraphiQL)
 	http.HandleFunc("/graphql", serveGraphQL(schema))
