@@ -11,16 +11,24 @@ import (
 	"github.com/mnmtanish/go-graphiql"
 )
 
+import (
+	"github.com/go-xorm/xorm"
+	_ "github.com/mattn/go-sqlite3"
+)
+
+var engine *xorm.Engine
+
 type Todo struct {
-	ID   string `json:"id"`
-	Text string `json:"text"`
-	Done bool   `json:"done"`
+	Id      int64
+	Text    string
+	Done    bool
+	Version int `xorm:"version"` // Optimistic Locking
 }
 
 var TodoList []Todo
 var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
-func RandStringRunes(n int) string {
+func RandStringRunes(n int64) string {
 	b := make([]rune, n)
 	for i := range b {
 		b[i] = letterRunes[rand.Intn(len(letterRunes))]
@@ -29,9 +37,9 @@ func RandStringRunes(n int) string {
 }
 
 func init() {
-	todo1 := Todo{ID: "a", Text: "A todo not to forget", Done: false}
-	todo2 := Todo{ID: "b", Text: "This is the most important", Done: false}
-	todo3 := Todo{ID: "c", Text: "Please do this or else", Done: false}
+	todo1 := Todo{Id: 1, Text: "A todo not to forget", Done: false}
+	todo2 := Todo{Id: 2, Text: "This is the most important", Done: false}
+	todo3 := Todo{Id: 3, Text: "Please do this or else", Done: false}
 	TodoList = append(TodoList, todo1, todo2, todo3)
 
 	rand.Seed(time.Now().UnixNano())
@@ -44,13 +52,13 @@ func init() {
 var todoType = graphql.NewObject(graphql.ObjectConfig{
 	Name: "Todo",
 	Fields: graphql.Fields{
-		"id": &graphql.Field{
+		"Id": &graphql.Field{
+			Type: graphql.Int,
+		},
+		"Text": &graphql.Field{
 			Type: graphql.String,
 		},
-		"text": &graphql.Field{
-			Type: graphql.String,
-		},
-		"done": &graphql.Field{
+		"Done": &graphql.Field{
 			Type: graphql.Boolean,
 		},
 	},
@@ -61,29 +69,29 @@ var rootMutation = graphql.NewObject(graphql.ObjectConfig{
 	Name: "RootMutation",
 	Fields: graphql.Fields{
 		/*
-			curl -g 'http://localhost:8081/graphql?query=mutation+_{createTodo(text:"My+new+todo"){id,text,done}}'
+			curl -g 'http://localhost:8081/graphql?query=mutation+_{createTodo(Text:"My+new+todo"){Id,Text,Done}}'
 		*/
 		"createTodo": &graphql.Field{
 			Type:        todoType, // the return type for this field
 			Description: "Create new todo",
 			Args: graphql.FieldConfigArgument{
-				"text": &graphql.ArgumentConfig{
+				"Text": &graphql.ArgumentConfig{
 					Type: graphql.NewNonNull(graphql.String),
 				},
 			},
 			Resolve: func(params graphql.ResolveParams) (interface{}, error) {
 
 				// marshall and cast the argument value
-				text, _ := params.Args["text"].(string)
+				Text, _ := params.Args["Text"].(string)
 
-				// figure out new id
-				newID := RandStringRunes(8)
+				// figure out new Id
+				var newID int64 = 4 //RandStringRunes(8)
 
 				// perform mutation operation here
 				// for e.g. create a Todo and save to DB.
 				newTodo := Todo{
-					ID:   newID,
-					Text: text,
+					Id:   newID,
+					Text: Text,
 					Done: false,
 				}
 
@@ -98,36 +106,39 @@ var rootMutation = graphql.NewObject(graphql.ObjectConfig{
 			},
 		},
 		/*
-			curl -g 'http://localhost:8081/graphql?query=mutation+_{updateTodo(id:"a",done:true){id,text,done}}'
+			curl -g 'http://localhost:8081/graphql?query=mutation+_{updateTodo(Id:"a",Done:true){Id,Text,Done}}'
 		*/
 		"updateTodo": &graphql.Field{
 			Type:        todoType, // the return type for this field
-			Description: "Update existing todo, mark it done or not done",
+			Description: "Update existing todo, mark it Done or not Done",
 			Args: graphql.FieldConfigArgument{
-				"done": &graphql.ArgumentConfig{
+				"Done": &graphql.ArgumentConfig{
 					Type: graphql.Boolean,
 				},
-				"id": &graphql.ArgumentConfig{
-					Type: graphql.NewNonNull(graphql.String),
+				"Id": &graphql.ArgumentConfig{
+					Type: graphql.NewNonNull(graphql.Int),
 				},
 			},
 			Resolve: func(params graphql.ResolveParams) (interface{}, error) {
 				// marshall and cast the argument value
-				done, _ := params.Args["done"].(bool)
-				id, _ := params.Args["id"].(string)
-				affectedTodo := Todo{}
+				DoneParam, _ := params.Args["Done"].(bool)
+				IdParam, _ := params.Args["Id"].(int64)
 
-				// Search list for todo with id and change the done variable
-				for i := 0; i < len(TodoList); i++ {
-					if TodoList[i].ID == id {
-						TodoList[i].Done = done
-						// Assign updated todo so we can return it
-						affectedTodo = TodoList[i]
-						break
-					}
+				todo := Todo{Id: IdParam, Done: DoneParam}
+
+				engine, _ = xorm.NewEngine("sqlite3", "./test.db")
+
+				affected, err := engine.Id(IdParam).Update(todo)
+				fmt.Println(affected)
+				//_, err := engine.Update(&todo)
+				if err != nil {
+					fmt.Println(err)
+					return nil, err
 				}
-				// Return affected todo
-				return affectedTodo, nil
+
+				engine.Get(&todo)
+
+				return todo, err
 			},
 		},
 	},
@@ -136,53 +147,52 @@ var rootMutation = graphql.NewObject(graphql.ObjectConfig{
 // root query
 // we just define a trivial example here, since root query is required.
 // Test with curl
-// curl -g 'http://localhost:8081/graphql?query={lastTodo{id,text,done}}'
+// curl -g 'http://localhost:8081/graphql?query={lastTodo{Id,Text,Done}}'
 var rootQuery = graphql.NewObject(graphql.ObjectConfig{
 	Name: "RootQuery",
 	Fields: graphql.Fields{
 
 		/*
-		   curl -g 'http://localhost:8081/graphql?query={todo(id:"b"){id,text,done}}'
+		   curl -g 'http://localhost:8081/graphql?query={todo(Id:"b"){Id,Text,Done}}'
 		*/
 		"todo": &graphql.Field{
 			Type:        todoType,
 			Description: "Get single todo",
 			Args: graphql.FieldConfigArgument{
-				"id": &graphql.ArgumentConfig{
-					Type: graphql.String,
+				"Id": &graphql.ArgumentConfig{
+					Type: graphql.Int,
 				},
 			},
 			Resolve: func(params graphql.ResolveParams) (interface{}, error) {
 
-				idQuery, isOK := params.Args["id"].(string)
+				idQuery, isOK := params.Args["Id"].(int64)
 				if isOK {
-					// Search for el with id
-					for _, todo := range TodoList {
-						if todo.ID == idQuery {
-							return todo, nil
-						}
-					}
+
+					engine, _ = xorm.NewEngine("sqlite3", "./test.db")
+
+					var todo = Todo{Id: idQuery}
+					_, err := engine.Get(&todo)
+					return todo, err
 				}
 
 				return Todo{}, nil
 			},
 		},
 
-		"lastTodo": &graphql.Field{
-			Type:        todoType,
-			Description: "Last todo added",
-			Resolve: func(params graphql.ResolveParams) (interface{}, error) {
-				return TodoList[len(TodoList)-1], nil
-			},
-		},
-
 		/*
-		   curl -g 'http://localhost:8081/graphql?query={todoList{id,text,done}}'
+		   curl -g 'http://localhost:8081/graphql?query={todoList{Id,Text,Done}}'
 		*/
 		"todoList": &graphql.Field{
 			Type:        graphql.NewList(todoType),
 			Description: "List of todos",
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+
+				var all []Todo
+
+				engine, _ = xorm.NewEngine("sqlite3", "./test.db")
+
+				_ = engine.Find(&all)
+				fmt.Println("%v", all)
 				return TodoList, nil
 			},
 		},
@@ -221,6 +231,35 @@ func serveGraphQL(s graphql.Schema) http.HandlerFunc {
 
 func main() {
 
+	engine, err := xorm.NewEngine("sqlite3", "./test.db")
+
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	err = engine.Sync2(new(Todo))
+
+	engine.Insert(TodoList)
+
+	todo := &Todo{}
+	engine.Id(1).Get(todo)
+
+	todo.Done = true
+	engine.Update(todo)
+
+	engine.Id(1).Get(todo)
+
+	//engine.Insert(&Account{Id: 1, Name: "sdfsdf", Balance: 12.0})
+
+	// a := &Account{}
+	// _, _ = engine.Id(1).Get(a)
+
+	// a.Balance += 10
+	// engine.Update(a)
+
+	// engine.Id(1).Get(a)
+
 	http.HandleFunc("/", graphiql.ServeGraphiQL)
 	http.HandleFunc("/graphql", serveGraphQL(schema))
 
@@ -232,4 +271,5 @@ func main() {
 	fmt.Println("Access the web app via browser at 'http://localhost:8081'")
 
 	http.ListenAndServe(":8081", nil)
+
 }
