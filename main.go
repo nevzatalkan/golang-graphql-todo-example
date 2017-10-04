@@ -16,7 +16,7 @@ import (
 var engine *xorm.Engine
 
 type Todo struct {
-	Id      int `xorm:"pk"`
+	Id      int `xorm:"pk autoincr" `
 	Text    string
 	Done    bool
 	Version int `xorm:"version"` // Optimistic Locking
@@ -58,25 +58,13 @@ var rootMutation = graphql.NewObject(graphql.ObjectConfig{
 			},
 			Resolve: func(params graphql.ResolveParams) (interface{}, error) {
 
-				// marshall and cast the argument value
 				Text, _ := params.Args["Text"].(string)
 
-				// figure out new Id
-				var newID int = 4 //RandStringRunes(8)
-
-				// perform mutation operation here
-				// for e.g. create a Todo and save to DB.
 				newTodo := Todo{
-					Id:   newID,
 					Text: Text,
 					Done: false,
 				}
 
-				// return the new Todo object that we supposedly save to DB
-				// Note here that
-				// - we are returning a `Todo` struct instance here
-				// - we previously specified the return Type to be `todoType`
-				// - `Todo` struct maps to `todoType`, as defined in `todoType` ObjectConfig`
 				return newTodo, nil
 			},
 		},
@@ -110,8 +98,6 @@ var rootMutation = graphql.NewObject(graphql.ObjectConfig{
 				engine.Cols("Done").Update(todo)
 
 				engine.Id(IdParam).Get(todo)
-
-				engine.Get(todo)
 
 				return todo, nil
 			},
