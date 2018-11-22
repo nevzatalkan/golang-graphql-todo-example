@@ -21,3 +21,7 @@ curl -g 'http://localhost:8080/graphql?query=mutation+_{updateTodo(id:"b",text:"
 ## Web App
 
 Access the web app at `http://localhost:8080/`.
+
+## To Do
+- [ ] Add newer UI
+- [x] Add unit tests
